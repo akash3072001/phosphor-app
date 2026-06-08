@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>PHOSPHOR — ascii feed</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#04070a;
+  --bg2:#020405;
+  --panel:rgba(9,16,18,.66);
+  --panel-solid:#0a1214;
+  --line:rgba(94,234,212,.16);
+  --line-soft:rgba(94,234,212,.08);
+  --accent:#5eead4;
+  --accent-2:#2fd6c1;
+  --text:#d4efe9;
+  --muted:#6c8a85;
+  --warn:#ffcf6b;
+  --bad:#ff7a7a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg2);
+  color:var(--text);
+  font-family:"Chakra Petch",sans-serif;
+  overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+  user-select:none;
+}
+button{font-family:inherit;color:inherit;cursor:pointer}
+
+.app{position:fixed;inset:0;overflow:hidden;background:var(--bg2)}
+
+/* ---------- atmospheric background ---------- */
+.bg{
+  position:absolute;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(120% 90% at 50% -10%, rgba(94,234,212,.07), transparent 60%),
+    radial-gradient(140% 120% at 50% 120%, rgba(20,40,38,.5), transparent 55%),
+    var(--bg2);
+}
+.bg::before{
+  content:"";position:absolute;inset:-2px;
+  background-image:
+    linear-gradient(var(--line-soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
+  background-size:44px 44px;
+  mask-image:radial-gradient(120% 100% at 50% 40%, #000 30%, transparent 80%);
+  animation:drift 26s linear infinite;
+  opacity:.6;
+}
+@keyframes drift{to{background-position:44px 44px,44px 44px}}
+
+/* ---------- stage ---------- */
+.stage{position:absolute;inset:0;z-index:1}
+#display,#glow{position:absolute;inset:0;width:100%;height:100%;display:block}
+#display{opacity:0;transition:opacity .7s ease;background:#000}
+.stage.live #display{opacity:1}
+#glow{
+  pointer-events:none;mix-blend-mode:screen;filter:blur(7px) saturate(1.15);
+  opacity:.85;transition:opacity .3s;
+}
+#glow.off{display:none}
+
+/* CRT scanlines + vignette (toggle) */
+.crt{position:absolute;inset:0;z-index:3;pointer-events:none;opacity:0;transition:opacity .4s}
+.app.crt-on .crt{opacity:1}
+.crt::before{
+  content:"";position:absolute;inset:0;
+  background:repeating-linear-gradient(0deg, rgba(0,0,0,.28) 0 1px, transparent 1px 3px);
+  mix-blend-mode:multiply;
+}
+.crt::after{
+  content:"";position:absolute;inset:0;
+  background:radial-gradient(120% 120% at 50% 50%, transparent 58%, rgba(0,0,0,.55) 100%);
+  box-shadow:inset 0 0 140px rgba(0,0,0,.6);
+}
+
+/* viewfinder corners */
+.corners span{position:absolute;width:26px;height:26px;border:1.5px solid var(--line);z-index:4;pointer-events:none;opacity:.55}
+.corners .tl{top:14px;left:14px;border-right:0;border-bottom:0}
+.corners .tr{top:14px;right:14px;border-left:0;border-bottom:0}
+.corners .bl{bottom:14px;left:14px;border-right:0;border-top:0}
+.corners .br{bottom:14px;right:14px;border-left:0;border-top:0}
+
+/* ---------- HUD top ---------- */
+.hud{position:absolute;top:0;left:0;right:0;z-index:6;display:flex;justify-content:space-between;
+  align-items:center;padding:16px 22px;pointer-events:none;
+  transition:opacity .35s, transform .35s}
+.app.hud-hidden .hud,.app.hud-hidden .dock{opacity:0;transform:translateY(-6px);pointer-events:none}
+.app.hud-hidden .dock{transform:translateY(10px)}
+.brand{font-weight:700;letter-spacing:.22em;font-size:15px;color:var(--text);
+  text-shadow:0 0 16px rgba(94,234,212,.35)}
+.brand b{color:var(--accent)}
+.brand span{font-family:"JetBrains Mono",monospace;font-weight:400;font-size:10px;
+  letter-spacing:.18em;color:var(--muted);margin-left:8px}
+.readout{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.12em;
+  color:var(--muted);display:flex;align-items:center;gap:9px;
+  background:var(--panel);border:1px solid var(--line);border-radius:7px;
+  padding:7px 12px;backdrop-filter:blur(10px)}
+.readout b{color:var(--accent);font-weight:500}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted);box-shadow:0 0 0 0 transparent}
+.dot.live{background:#5dffa8;animation:pulse 1.5s infinite}
+.dot.demo{background:var(--warn)}
+.dot.bad{background:var(--bad)}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(93,255,168,.5)}70%{box-shadow:0 0 0 7px rgba(93,255,168,0)}100%{box-shadow:0 0 0 0 transparent}}
+
+/* ---------- start screen ---------- */
+.start{position:absolute;inset:0;z-index:8;display:flex;align-items:center;justify-content:center;
+  text-align:center;padding:24px;background:
+    radial-gradient(80% 60% at 50% 45%, rgba(7,14,16,.4), rgba(2,4,5,.92))}
+.start.gone{opacity:0;pointer-events:none;transition:opacity .5s}
+.start-inner{max-width:520px;animation:rise .9s cubic-bezier(.16,1,.3,1) both}
+.glyph-rain{font-family:"JetBrains Mono",monospace;color:var(--accent);opacity:.5;
+  letter-spacing:.32em;font-size:12px;margin-bottom:26px;
+  animation:flick 2.6s steps(8) infinite}
+@keyframes flick{0%,100%{opacity:.22}50%{opacity:.6}}
+.title{font-weight:700;font-size:clamp(46px,11vw,96px);letter-spacing:.16em;line-height:1;
+  color:#eafff9;text-shadow:0 0 40px rgba(94,234,212,.45),0 0 4px rgba(94,234,212,.6);
+  animation:rise .9s .05s cubic-bezier(.16,1,.3,1) both}
+.sub{font-family:"JetBrains Mono",monospace;color:var(--muted);font-size:13px;
+  letter-spacing:.26em;margin-top:18px;text-transform:uppercase;
+  animation:rise .9s .15s cubic-bezier(.16,1,.3,1) both}
+.cta{margin-top:38px;font-weight:600;letter-spacing:.2em;font-size:15px;text-transform:uppercase;
+  color:var(--accent);background:linear-gradient(180deg,rgba(94,234,212,.14),rgba(94,234,212,.05));
+  border:1.5px solid var(--accent);border-radius:11px;padding:16px 34px;
+  box-shadow:0 0 0 0 rgba(94,234,212,.0),0 8px 40px rgba(94,234,212,.12);
+  transition:.25s;backdrop-filter:blur(6px);
+  animation:rise .9s .25s cubic-bezier(.16,1,.3,1) both,glow 3s ease-in-out 1s infinite}
+.cta:hover{background:var(--accent);color:#022;box-shadow:0 0 38px rgba(94,234,212,.5);transform:translateY(-2px)}
+@keyframes glow{0%,100%{border-color:rgba(94,234,212,.55)}50%{border-color:rgba(94,234,212,1)}}
+.hint{margin-top:22px;font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--muted);
+  letter-spacing:.08em;animation:rise .9s .35s cubic-bezier(.16,1,.3,1) both}
+.link{background:none;border:0;color:var(--accent);text-decoration:underline;
+  text-underline-offset:3px;font:inherit;letter-spacing:inherit;padding:0 2px}
+.link:hover{color:#bff6ec}
+.err{margin-top:18px;min-height:18px;color:var(--bad);font-family:"JetBrains Mono",monospace;
+  font-size:11px;letter-spacing:.05em}
+.privacy{margin:22px auto 0;max-width:438px;display:flex;align-items:flex-start;gap:9px;
+  text-align:left;font-family:"JetBrains Mono",monospace;font-size:10.5px;line-height:1.65;
+  letter-spacing:.01em;color:var(--muted);border:1px solid var(--line-soft);border-radius:11px;
+  padding:11px 14px;background:rgba(94,234,212,.035);
+  animation:rise .9s .45s cubic-bezier(.16,1,.3,1) both}
+.privacy svg{color:var(--accent);flex:0 0 auto;margin-top:2px;
+  filter:drop-shadow(0 0 6px rgba(94,234,212,.45))}
+.privacy b{color:var(--text);font-weight:500}
+@keyframes rise{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+
+/* ---------- dock ---------- */
+.dock{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:7;
+  width:min(940px,calc(100vw - 28px));
+  background:var(--panel);border:1px solid var(--line);border-radius:16px;
+  backdrop-filter:blur(16px) saturate(1.1);
+  box-shadow:0 18px 60px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.04);
+  padding:14px 16px 13px;transition:transform .35s cubic-bezier(.16,1,.3,1)}
+.dock.min{transform:translateX(-50%) translateY(calc(100% - 40px))}
+.dock-handle{position:absolute;top:-13px;left:50%;transform:translateX(-50%);
+  background:var(--panel-solid);border:1px solid var(--line);color:var(--muted);
+  width:54px;height:24px;border-radius:8px;font-size:13px;display:flex;align-items:center;justify-content:center;
+  letter-spacing:.1em}
+.dock-handle:hover{color:var(--accent);border-color:var(--accent)}
+.rows{display:flex;flex-direction:column;gap:11px}
+.row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.lbl{font-family:"JetBrains Mono",monospace;font-size:9.5px;letter-spacing:.2em;color:var(--muted);
+  text-transform:uppercase;min-width:62px;flex:0 0 auto}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.06em;
+  color:var(--muted);background:rgba(255,255,255,.02);border:1px solid var(--line-soft);
+  border-radius:8px;padding:7px 11px;transition:.16s;white-space:nowrap}
+.chip:hover{color:var(--text);border-color:var(--line)}
+.chip.on{color:#021816;background:var(--accent);border-color:var(--accent);
+  box-shadow:0 0 16px rgba(94,234,212,.3);font-weight:500}
+.divider{flex:1 1 0;min-width:0}
+
+/* slider */
+.slider{display:flex;align-items:center;gap:11px;flex:1 1 200px;min-width:170px}
+input[type=range]{-webkit-appearance:none;appearance:none;height:4px;border-radius:4px;flex:1;
+  background:linear-gradient(90deg,var(--accent) var(--p,40%),rgba(255,255,255,.1) var(--p,40%));
+  outline:none;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;
+  background:#eafff9;border:2px solid var(--accent);box-shadow:0 0 12px rgba(94,234,212,.6);cursor:pointer}
+input[type=range]::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:#eafff9;
+  border:2px solid var(--accent);box-shadow:0 0 12px rgba(94,234,212,.6);cursor:pointer}
+.val{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--accent);min-width:46px;text-align:right}
+
+/* toggles */
+.tog{display:flex;align-items:center;gap:8px;font-family:"JetBrains Mono",monospace;
+  font-size:10.5px;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;cursor:pointer}
+.tog input{display:none}
+.sw{width:34px;height:18px;border-radius:10px;background:rgba(255,255,255,.08);
+  border:1px solid var(--line-soft);position:relative;transition:.2s;flex:0 0 auto}
+.sw::after{content:"";position:absolute;top:1.5px;left:2px;width:12px;height:12px;border-radius:50%;
+  background:var(--muted);transition:.2s}
+.tog input:checked + .sw{background:rgba(94,234,212,.25);border-color:var(--accent)}
+.tog input:checked + .sw::after{left:17px;background:var(--accent);box-shadow:0 0 10px rgba(94,234,212,.7)}
+.tog:hover{color:var(--text)}
+
+/* action buttons */
+.acts{display:flex;gap:7px;flex-wrap:wrap}
+.act{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.08em;color:var(--text);
+  background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:8px;
+  padding:8px 12px;transition:.16s;display:flex;align-items:center;gap:6px}
+.act:hover{border-color:var(--accent);color:var(--accent);background:rgba(94,234,212,.06)}
+.act.stop:hover{border-color:var(--bad);color:var(--bad);background:rgba(255,122,122,.06)}
+
+/* toast */
+.toast{position:absolute;left:50%;top:74px;transform:translateX(-50%) translateY(-10px);z-index:9;
+  background:var(--panel-solid);border:1px solid var(--line);color:var(--text);
+  font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.05em;
+  padding:9px 16px;border-radius:9px;opacity:0;transition:.3s;pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+.hidden{display:none!important}
+
+@media (max-width:640px){
+  .brand span{display:none}
+  .lbl{min-width:100%;margin-bottom:-4px}
+  .dock{padding:12px 12px 11px;bottom:10px}
+  .readout{font-size:10px;padding:6px 9px}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="bg"></div>
+
+  <div class="stage" id="stage">
+    <canvas id="display"></canvas>
+    <canvas id="glow"></canvas>
+    <div class="crt"></div>
+    <div class="corners"><span class="tl"></span><span class="tr"></span><span class="bl"></span><span class="br"></span></div>
+
+    <div class="hud">
+      <div class="brand"><b>PHOSPHOR</b><span>// ascii feed</span></div>
+      <div class="readout">
+        <span class="dot" id="dot"></span>
+        <span id="status">STANDBY</span>·
+        <span><b id="fps">--</b> fps</span>·
+        <span id="grid">--×--</span>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <div class="start" id="start">
+      <div class="start-inner">
+        <div class="glyph-rain">█▓▒░ ·:+=*#%@ ░▒▓█</div>
+        <div class="title">PHOSPHOR</div>
+        <div class="sub">real-time video → glyph encoder</div>
+        <button class="cta" id="startBtn">▶ initialize feed</button>
+        <div class="hint">allow camera access &nbsp;·&nbsp; or run a <button class="link" id="demoBtn">demo signal</button></div>
+        <div class="err" id="err"></div>
+        <div class="privacy">
+          <svg width="12" height="14" viewBox="0 0 24 28" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3.5" y="11" width="17" height="14" rx="2.5"/><path d="M7.5 11V7a4.5 4.5 0 0 1 9 0v4"/></svg>
+          <span>Runs entirely in your browser. Your camera feed is <b>never recorded, uploaded, or stored</b> &mdash; it never leaves this device. Only frames you press <b>Capture</b> are saved, as a PNG to your device.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dock min" id="dock">
+    <button class="dock-handle" id="handle" title="Show / hide controls">▾</button>
+    <div class="rows">
+      <div class="row">
+        <span class="lbl">Glyphs</span>
+        <div class="chips" id="charsets">
+          <button class="chip" data-set="detailed">Detailed</button>
+          <button class="chip" data-set="classic">Classic</button>
+          <button class="chip" data-set="blocks">Blocks</button>
+          <button class="chip" data-set="braille">Braille</button>
+          <button class="chip" data-set="binary">Binary</button>
+          <button class="chip" data-set="matrix">Matrix</button>
+          <button class="chip" data-set="hearts">Hearts</button>
+        </div>
+      </div>
+      <div class="row">
+        <span class="lbl">Palette</span>
+        <div class="chips" id="palettes">
+          <button class="chip" data-pal="phosphor">Phosphor</button>
+          <button class="chip" data-pal="amber">Amber</button>
+          <button class="chip" data-pal="ice">Ice</button>
+          <button class="chip" data-pal="neon">Neon</button>
+          <button class="chip" data-pal="fire">Fire</button>
+          <button class="chip" data-pal="mono">Mono</button>
+          <button class="chip" data-pal="true">RGB</button>
+        </div>
+      </div>
+      <div class="row">
+        <span class="lbl">Tune</span>
+        <div class="slider"><span class="lbl" style="min-width:auto">res</span>
+          <input type="range" id="density" min="40" max="190" value="96"><span class="val" id="densityV">96 c</span></div>
+        <div class="slider"><span class="lbl" style="min-width:auto">contrast</span>
+          <input type="range" id="contrast" min="60" max="260" value="118"><span class="val" id="contrastV">1.18×</span></div>
+      </div>
+      <div class="row">
+        <span class="lbl">Effects</span>
+        <label class="tog"><input type="checkbox" id="t_glow" checked><span class="sw"></span>Glow</label>
+        <label class="tog"><input type="checkbox" id="t_crt"><span class="sw"></span>CRT</label>
+        <label class="tog"><input type="checkbox" id="t_mirror" checked><span class="sw"></span>Mirror</label>
+        <label class="tog"><input type="checkbox" id="t_invert"><span class="sw"></span>Invert</label>
+        <div class="divider"></div>
+        <div class="acts">
+          <button class="act" id="captureBtn" title="Save frame (Space)">⤓ capture</button>
+          <button class="act" id="flipBtn" title="Switch camera">⟲ flip</button>
+          <button class="act" id="fullBtn" title="Fullscreen (F)">⤢ full</button>
+          <button class="act stop" id="stopBtn">■ stop</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<video id="video" playsinline muted></video>
+<canvas id="sampler"></canvas>
+
+<style>#video{position:fixed;width:2px;height:2px;opacity:0;pointer-events:none;top:-10px}#sampler{display:none}</style>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---- elements ----
+  const app=document.getElementById('app');
+  const stage=document.getElementById('stage');
+  const video=document.getElementById('video');
+  const sampler=document.getElementById('sampler');
+  const display=document.getElementById('display');
+  const glow=document.getElementById('glow');
+  const ctxS=sampler.getContext('2d',{willReadFrequently:true});
+  const ctxD=display.getContext('2d');
+  const ctxG=glow.getContext('2d');
+  const startEl=document.getElementById('start');
+  const errEl=document.getElementById('err');
+  const dotEl=document.getElementById('dot');
+  const statusEl=document.getElementById('status');
+  const fpsEl=document.getElementById('fps');
+  const gridEl=document.getElementById('grid');
+  const toastEl=document.getElementById('toast');
+
+  // ---- glyph sets (sparse -> dense) ----
+  const CHARSETS={
+    detailed:" .'`^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$",
+    classic:" .:-=+*#%@",
+    blocks:" \u2591\u2592\u2593\u2588",
+    braille:" \u2804\u2806\u2816\u2836\u283f\u287f\u28ff",
+    binary:" 01",
+    hearts:" \u00b7\u2661\u2665",
+    matrix:"matrix"
+  };
+  const KANA="\u30a2\u30a4\u30a6\u30a8\u30aa\u30ab\u30ad\u30af\u30b1\u30b3\u30b5\u30b7\u30b9\u30bb\u30bd\u30bf\u30c1\u30c4\u30c6\u30c8\u30ca\u30cb\u30cc\u30cd\u30ce\u30cf\u30d2\u30d5\u30d8\u30db\u30de\u30df\u30e0\u30e1\u30e2\u30e4\u30e6\u30e8\u30e9\u30ea\u30eb\u30ec\u30ed\u30ef\u30f3" + "0123456789:.=*+";
+
+  // ---- palette backgrounds ----
+  const BG={phosphor:'#020705',amber:'#0a0602',ice:'#01070a',neon:'#04030a',fire:'#0a0402',mono:'#040404',true:'#000000'};
+
+  // ---- state ----
+  const state={charset:'detailed',palette:'phosphor',density:96,contrast:1.18,
+    invert:false,mirror:true,glow:true,crt:false,bg:BG.phosphor,facing:'user',source:null};
+
+  let stream=null, raf=0, running=false;
+  let cssW=0,cssH=0,dpr=1,cols=8,rows=4,cellW=8,cellH=12,fontSize=12,fontSpec='12px monospace';
+  let colorLUT=new Array(256);
+  let demoBuf=null, demoT=0;
+
+  // ---------- color ----------
+  function computeColor(key,bv){
+    const t=bv/255;
+    switch(key){
+      case 'phosphor': return 'hsl('+(150-20*t).toFixed(0)+',90%,'+(20+t*42).toFixed(0)+'%)';
+      case 'amber':    return 'hsl(36,96%,'+(17+t*47).toFixed(0)+'%)';
+      case 'ice':      return 'hsl('+(192-12*t).toFixed(0)+',85%,'+(32+t*52).toFixed(0)+'%)';
+      case 'neon':     return 'hsl('+(188+t*140).toFixed(0)+',96%,'+(46+t*16).toFixed(0)+'%)';
+      case 'fire':     return 'hsl('+(t*54).toFixed(0)+',100%,'+(11+t*53).toFixed(0)+'%)';
+      case 'mono':     return 'hsl(0,0%,'+(14+t*82).toFixed(0)+'%)';
+      default:         return '#fff';
+    }
+  }
+  function buildLUT(){ for(let i=0;i<256;i++) colorLUT[i]=computeColor(state.palette,i); }
+
+  function hslToRgb(h,s,l){
+    let r,g,b;
+    if(s===0){r=g=b=l;}
+    else{
+      const q=l<0.5?l*(1+s):l+s-l*s, p=2*l-q;
+      const hk=function(t){if(t<0)t+=1;if(t>1)t-=1;
+        if(t<1/6)return p+(q-p)*6*t;if(t<1/2)return q;if(t<2/3)return p+(q-p)*(2/3-t)*6;return p;};
+      r=hk(h+1/3);g=hk(h);b=hk(h-1/3);
+    }
+    return [(r*255)|0,(g*255)|0,(b*255)|0];
+  }
+
+  // ---------- layout ----------
+  function layout(){
+    const rect=stage.getBoundingClientRect();
+    cssW=Math.max(1,Math.floor(rect.width));
+    cssH=Math.max(1,Math.floor(rect.height));
+    dpr=Math.min(window.devicePixelRatio||1,2);
+    cols=Math.max(8,state.density|0);
+    cellW=cssW/cols;
+    fontSize=cellW/0.6;
+    cellH=fontSize*0.92;
+    rows=Math.max(4,Math.floor(cssH/cellH));
+    fontSpec=fontSize.toFixed(2)+'px "JetBrains Mono", ui-monospace, monospace';
+    for(const c of [display,glow]){
+      c.width=Math.round(cssW*dpr); c.height=Math.round(cssH*dpr);
+      c.style.width=cssW+'px'; c.style.height=cssH+'px';
+    }
+    ctxD.setTransform(dpr,0,0,dpr,0,0);
+    ctxG.setTransform(1,0,0,1,0,0);
+    sampler.width=cols; sampler.height=rows;
+    demoBuf=null;
+    gridEl.textContent=cols+'\u00d7'+rows;
+  }
+
+  // ---------- source sampling ----------
+  function drawCover(img){
+    const iw=img.videoWidth||img.width, ih=img.videoHeight||img.height;
+    if(!iw||!ih) return false;
+    const aspect=cssW/cssH, ia=iw/ih;
+    let sx,sy,sw,sh;
+    if(ia>aspect){ sh=ih; sw=ih*aspect; sx=(iw-sw)/2; sy=0; }
+    else { sw=iw; sh=iw/aspect; sx=0; sy=(ih-sh)/2; }
+    ctxS.setTransform(1,0,0,1,0,0);
+    ctxS.clearRect(0,0,cols,rows);
+    if(state.mirror){ ctxS.translate(cols,0); ctxS.scale(-1,1); }
+    ctxS.drawImage(img,sx,sy,sw,sh,0,0,cols,rows);
+    ctxS.setTransform(1,0,0,1,0,0);
+    return true;
+  }
+
+  function demoFrame(){
+    if(!demoBuf||demoBuf.length!==cols*rows*4) demoBuf=new Uint8ClampedArray(cols*rows*4);
+    demoT+=0.05; const t=demoT, cx=cols/2, cy=rows/2;
+    for(let y=0;y<rows;y++){
+      for(let x=0;x<cols;x++){
+        const d=Math.sqrt((x-cx)*(x-cx)+(y-cy)*(y-cy));
+        let v=Math.sin(x*0.18+t)+Math.sin(y*0.21-t*0.8)+Math.sin((x+y)*0.10+t*1.2)+Math.sin(d*0.20-t*1.7);
+        let n=(v+4)/8; if(n<0)n=0; else if(n>1)n=1; n=Math.pow(n,1.25);
+        const hue=((n*340+t*36)%360)/360;
+        const c=hslToRgb(hue,0.75,0.10+0.45*n);
+        const i=(y*cols+x)*4;
+        demoBuf[i]=c[0]; demoBuf[i+1]=c[1]; demoBuf[i+2]=c[2]; demoBuf[i+3]=255;
+      }
+    }
+    return demoBuf;
+  }
+
+  // ---------- render ----------
+  function render(){
+    if(!cssW||!cssH) return;
+    let data;
+    if(state.source==='camera'){
+      if(!video.videoWidth) return;
+      if(!drawCover(video)) return;
+      data=ctxS.getImageData(0,0,cols,rows).data;
+    } else {
+      data=demoFrame();
+    }
+    ctxD.setTransform(dpr,0,0,dpr,0,0);
+    ctxD.fillStyle=state.bg;
+    ctxD.fillRect(0,0,cssW,cssH);
+    ctxD.textBaseline='top';
+    ctxD.font=fontSpec;
+    const cs=CHARSETS[state.charset];
+    const isMatrix=state.charset==='matrix';
+    const useRGB=state.palette==='true';
+    const lut=colorLUT, contrast=state.contrast, inv=state.invert;
+    const last=cs.length-1;
+    for(let y=0;y<rows;y++){
+      const py=y*cellH;
+      for(let x=0;x<cols;x++){
+        const i=(y*cols+x)<<2;
+        const r=data[i], g=data[i+1], b=data[i+2];
+        let lum=0.299*r+0.587*g+0.114*b;
+        lum=(lum-128)*contrast+128;
+        let bv=inv?255-lum:lum;
+        bv=bv<0?0:(bv>255?255:bv);
+        let ch;
+        if(isMatrix){
+          if(bv<48) continue;
+          ch=KANA.charAt((Math.random()*KANA.length)|0);
+        } else {
+          const idx=(bv/255*last+0.5)|0;
+          ch=cs.charAt(idx);
+          if(ch===' ') continue;
+        }
+        ctxD.fillStyle=useRGB
+          ? 'rgb('+Math.min(255,(r*1.12)|0)+','+Math.min(255,(g*1.12)|0)+','+Math.min(255,(b*1.12)|0)+')'
+          : lut[bv|0];
+        ctxD.fillText(ch,x*cellW,py);
+      }
+    }
+    if(state.glow){ ctxG.clearRect(0,0,glow.width,glow.height); ctxG.drawImage(display,0,0); }
+  }
+
+  // ---------- loop ----------
+  let lastT=0, frames=0, fpsT=0;
+  function loop(now){
+    if(!running) return;
+    render();
+    frames++;
+    if(now-fpsT>=500){ fpsEl.textContent=Math.round(frames*1000/(now-fpsT)); frames=0; fpsT=now; }
+    raf=requestAnimationFrame(loop);
+  }
+  function startLoop(){
+    if(raf) cancelAnimationFrame(raf);
+    running=true; frames=0; fpsT=performance.now();
+    layout();
+    stage.classList.add('live');
+    raf=requestAnimationFrame(loop);
+  }
+
+  // ---------- camera / demo ----------
+  function setStatus(txt,kind){
+    statusEl.textContent=txt;
+    dotEl.className='dot'+(kind?(' '+kind):'');
+  }
+  function hideStart(){ startEl.classList.add('gone'); document.getElementById('dock').classList.remove('min'); }
+  function showStart(){ startEl.classList.remove('gone'); stage.classList.remove('live'); }
+
+  async function startCamera(){
+    errEl.textContent='';
+    setStatus('LINKING\u2026');
+    try{
+      const s=await navigator.mediaDevices.getUserMedia({
+        video:{facingMode:state.facing,width:{ideal:1280},height:{ideal:720}},audio:false});
+      stopStream(); stream=s; state.source='camera'; video.srcObject=s;
+      await video.play();
+      hideStart(); setStatus('LIVE','live'); startLoop();
+    }catch(e){
+      let m='Camera unavailable.';
+      if(e&&(e.name==='NotAllowedError'||e.name==='SecurityError')) m='Camera permission denied. Allow access, or run the demo signal.';
+      else if(e&&e.name==='NotFoundError') m='No camera detected. Try the demo signal instead.';
+      else if(e&&e.name==='NotReadableError') m='Camera is busy in another app.';
+      errEl.textContent=m; setStatus('NO SIGNAL','bad');
+    }
+  }
+  function startDemo(){
+    stopStream(); state.source='demo';
+    hideStart(); setStatus('DEMO','demo'); startLoop();
+  }
+  function stopStream(){
+    if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+    video.srcObject=null;
+  }
+  function stopAll(){
+    running=false; if(raf) cancelAnimationFrame(raf); raf=0;
+    stopStream(); state.source=null;
+    fpsEl.textContent='--';
+    showStart(); setStatus('STANDBY');
+  }
+  async function flipCam(){
+    if(state.source!=='camera') return;
+    const next=state.facing==='user'?'environment':'user';
+    try{
+      const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:next},audio:false});
+      stopStream(); stream=s; state.facing=next; video.srcObject=s; await video.play();
+      toast('Camera: '+(next==='user'?'front':'rear'));
+    }catch(e){ toast('Cannot switch camera'); }
+  }
+
+  // ---------- capture ----------
+  function capture(){
+    if(!running) return;
+    try{
+      const out=document.createElement('canvas');
+      out.width=display.width; out.height=display.height;
+      const o=out.getContext('2d');
+      o.fillStyle=state.bg; o.fillRect(0,0,out.width,out.height);
+      o.drawImage(display,0,0);
+      if(state.glow){ o.save(); o.globalCompositeOperation='screen'; o.globalAlpha=.85;
+        if('filter' in o) o.filter='blur(6px)'; o.drawImage(display,0,0); o.restore(); }
+      out.toBlob(function(blob){
+        const url=URL.createObjectURL(blob);
+        const a=document.createElement('a');
+        a.href=url; a.download='phosphor_'+Date.now()+'.png';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(()=>URL.revokeObjectURL(url),1500);
+        toast('Frame captured');
+      },'image/png');
+    }catch(e){ toast('Capture blocked here'); }
+  }
+
+  // ---------- fullscreen ----------
+  function toggleFull(){
+    if(!document.fullscreenElement){ (app.requestFullscreen||app.webkitRequestFullscreen||function(){}).call(app); }
+    else { (document.exitFullscreen||document.webkitExitFullscreen||function(){}).call(document); }
+  }
+
+  // ---------- toast ----------
+  let toastTimer=0;
+  function toast(msg){
+    toastEl.textContent=msg; toastEl.classList.add('show');
+    clearTimeout(toastTimer); toastTimer=setTimeout(()=>toastEl.classList.remove('show'),1600);
+  }
+
+  // ---------- ui wiring ----------
+  function activate(container,attr,value){
+    container.querySelectorAll('.chip').forEach(c=>c.classList.toggle('on',c.getAttribute(attr)===value));
+  }
+  document.getElementById('charsets').addEventListener('click',e=>{
+    const b=e.target.closest('.chip'); if(!b)return;
+    state.charset=b.getAttribute('data-set'); activate(e.currentTarget,'data-set',state.charset);
+  });
+  document.getElementById('palettes').addEventListener('click',e=>{
+    const b=e.target.closest('.chip'); if(!b)return;
+    state.palette=b.getAttribute('data-pal'); state.bg=BG[state.palette]||'#000';
+    buildLUT(); activate(e.currentTarget,'data-pal',state.palette);
+  });
+
+  const dens=document.getElementById('density'), densV=document.getElementById('densityV');
+  const cont=document.getElementById('contrast'), contV=document.getElementById('contrastV');
+  function sliderFill(el){ const min=+el.min,max=+el.max; el.style.setProperty('--p',((el.value-min)/(max-min)*100)+'%'); }
+  dens.addEventListener('input',()=>{ state.density=+dens.value; densV.textContent=dens.value+' c'; sliderFill(dens); if(running)layout(); });
+  cont.addEventListener('input',()=>{ state.contrast=(+cont.value)/100; contV.textContent=state.contrast.toFixed(2)+'\u00d7'; sliderFill(cont); });
+
+  document.getElementById('t_glow').addEventListener('change',e=>{ state.glow=e.target.checked; glow.classList.toggle('off',!state.glow); });
+  document.getElementById('t_crt').addEventListener('change',e=>{ state.crt=e.target.checked; app.classList.toggle('crt-on',state.crt); });
+  document.getElementById('t_mirror').addEventListener('change',e=>{ state.mirror=e.target.checked; });
+  document.getElementById('t_invert').addEventListener('change',e=>{ state.invert=e.target.checked; });
+
+  document.getElementById('startBtn').addEventListener('click',startCamera);
+  document.getElementById('demoBtn').addEventListener('click',startDemo);
+  document.getElementById('captureBtn').addEventListener('click',capture);
+  document.getElementById('flipBtn').addEventListener('click',flipCam);
+  document.getElementById('fullBtn').addEventListener('click',toggleFull);
+  document.getElementById('stopBtn').addEventListener('click',stopAll);
+  document.getElementById('handle').addEventListener('click',function(){
+    document.getElementById('dock').classList.toggle('min');
+  });
+
+  window.addEventListener('keydown',e=>{
+    if(/INPUT|TEXTAREA/.test((e.target||{}).tagName||''))return;
+    if(e.code==='Space'){ e.preventDefault(); capture(); }
+    else if(e.key==='f'||e.key==='F'){ toggleFull(); }
+    else if(e.key==='h'||e.key==='H'){ app.classList.toggle('hud-hidden'); }
+    else if(e.key==='g'||e.key==='G'){ const t=document.getElementById('t_glow'); t.checked=!t.checked; t.dispatchEvent(new Event('change')); }
+  });
+
+  // resize handling
+  let rt=0;
+  const onResize=()=>{ clearTimeout(rt); rt=setTimeout(()=>{ if(running)layout(); },120); };
+  window.addEventListener('resize',onResize);
+  document.addEventListener('fullscreenchange',()=>{ setTimeout(()=>{ if(running)layout(); },80); });
+
+  // init defaults
+  activate(document.getElementById('charsets'),'data-set',state.charset);
+  activate(document.getElementById('palettes'),'data-pal',state.palette);
+  sliderFill(dens); sliderFill(cont); buildLUT();
+  setStatus('STANDBY');
+})();
+</script>
+</body>
+</html>
